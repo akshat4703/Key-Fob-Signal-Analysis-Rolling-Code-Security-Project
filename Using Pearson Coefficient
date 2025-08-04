@@ -1,0 +1,120 @@
+import numpy as np
+from scipy.stats import pearsonr, spearmanr, kendalltau
+from sklearn.metrics.pairwise import cosine_similarity
+import matplotlib.pyplot as plt
+
+# === Step 1: Load the Original and Replayed Signals ===
+
+# TODO: Update these file paths with your actual dataset paths
+original_path = "C:\\Users\\aksha\\OneDrive\\Desktop\\keyfob captured\\closecar2"     # e.g., "keyfobopencar"
+replayed_path = "C:\\Users\\aksha\\OneDrive\\Desktop\\retransmit through hackrf\\closecar2_tx"     # e.g., "keyfobopencar_tx"
+
+# Load I/Q samples
+raw_orig = np.fromfile(original_path, dtype=np.int8)
+raw_replay = np.fromfile(replayed_path, dtype=np.int8)
+
+# Convert I/Q to complex form
+iq_orig = raw_orig[::2] + 1j * raw_orig[1::2]
+iq_replay = raw_replay[::2] + 1j * raw_replay[1::2]
+
+# === Step 2: Get Amplitude Envelope (Analog Signal) ===
+amp_orig = np.abs(iq_orig)
+amp_replay = np.abs(iq_replay)
+
+# === Step 3: Extract Single Packet from Each (first burst) ===
+def extract_first_packet(signal, threshold_ratio=0.2, min_len=500):
+    threshold = np.max(signal) * threshold_ratio
+    print(f"Threshold used: {threshold:.2f}")
+
+    above = signal > threshold
+    if not np.any(above):
+        print("No samples above threshold.")
+        return None
+
+    # Find edges
+    edges = np.diff(above.astype(int))
+    starts = np.where(edges == 1)[0]
+    ends = np.where(edges == -1)[0]
+
+    print(f"Detected {len(starts)} start(s) and {len(ends)} end(s)")
+
+    if len(starts) == 0 or len(ends) == 0:
+        print("No clear packet start or end found.")
+        return None
+
+    # Handle edge cases
+    if ends[0] < starts[0]:
+        ends = ends[1:]
+    if len(starts) > len(ends):
+        starts = starts[:len(ends)]
+
+    # Check packet lengths and return the first valid one
+    for start, end in zip(starts, ends):
+        if end - start >= min_len:
+            print(f"Packet found from {start} to {end}")
+            return signal[start:end]
+
+    print("No packet of minimum length found.")
+    return None
+
+pkt_orig = amp_orig[50000:60000]  # change indices based on signal plot
+pkt_replay = amp_replay[50000:60000]
+
+
+
+# Optional: Truncate to shortest length
+min_len = min(len(pkt_orig), len(pkt_replay))
+pkt_orig = pkt_orig[:min_len]
+pkt_replay = pkt_replay[:min_len]
+
+
+# Define normalization function
+def normalize(sig):
+    return (sig - np.mean(sig)) / np.std(sig)
+
+# Normalize both original and replayed packets
+pkt_orig_norm = normalize(pkt_orig)
+pkt_replay_norm = normalize(pkt_replay)
+
+
+correlation = np.correlate(pkt_replay, pkt_orig, mode='full')
+shift = np.argmax(correlation) - len(pkt_orig) + 1
+aligned_pkt_replay = pkt_replay[shift:shift+len(pkt_orig)]
+
+# === Step 5: Compute Similarity Metrics ===
+
+# Pearson
+pearson_corr, _ = pearsonr(pkt_orig_norm, pkt_replay_norm)
+
+# Spearman
+spearman_corr, _ = spearmanr(pkt_orig_norm, pkt_replay_norm)
+
+# Kendall Tau
+kendall_corr, _ = kendalltau(pkt_orig_norm, pkt_replay_norm)
+
+# Cosine Similarity
+cosine_sim = cosine_similarity([pkt_orig_norm], [pkt_replay_norm])[0][0]
+
+# Normalized Cross-Correlation (manual)
+cross_corr = np.correlate(pkt_orig_norm, pkt_replay_norm, mode='valid')[0] / len(pkt_orig_norm)
+
+# === Step 6: Display Results ===
+print("\n--- Similarity Scores Between Original and Replayed Packets ---")
+print(f"📈 Pearson Correlation: {pearson_corr:.4f}")
+print(f"📊 Spearman Correlation: {spearman_corr:.4f}")
+print(f"📉 Kendall Tau: {kendall_corr:.4f}")
+print(f"🔄 Cosine Similarity: {cosine_sim:.4f}")
+print(f"🔁 Normalized Cross-Correlation: {cross_corr:.4f}")
+
+# === Optional: Plot Comparison ===
+plt.figure(figsize=(10, 4))
+plt.plot(pkt_orig_norm, label="Original Packet")
+plt.plot(pkt_replay_norm, label="Replayed Packet", alpha=0.7)
+plt.title("Normalized Packet Comparison (Analog Signal)")
+plt.xlabel("Sample Index")
+plt.ylabel("Normalized Amplitude")
+plt.grid(True)
+plt.legend()
+plt.tight_layout()
+plt.show()
+

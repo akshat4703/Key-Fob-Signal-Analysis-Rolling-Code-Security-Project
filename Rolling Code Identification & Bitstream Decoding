@@ -1,0 +1,67 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Reload raw I/Q data
+raw = np.fromfile("C:\\Users\\aksha\\OneDrive\\Desktop\\keyfob captured\\keyfobopencar", dtype=np.int8)
+I = raw[::2]
+Q = raw[1::2]
+iq = I + 1j * Q
+
+# Compute amplitude
+amplitude = np.abs(iq)
+iq_downsampled = iq[::10]  # reduce sampling to ~200 kHz
+fs_down = 200_000
+
+from scipy.signal import spectrogram
+
+f, t, Sxx = spectrogram(iq_downsampled, fs=fs_down, nperseg=1024)
+# Plot a small segment
+plt.figure(figsize=(12, 4))
+plt.plot(amplitude[:5000])
+plt.title("Raw IQ Amplitude (First 5000 samples)")
+plt.xlabel("Sample Index")
+plt.ylabel("Amplitude")
+plt.grid(True)
+plt.show()
+
+##Phase 3 
+
+# STEP 1: Normalize and Threshold
+threshold = np.mean(amplitude)
+binary_array = np.where(amplitude > threshold, 1, 0)
+
+# Convert to string format (bitstream)
+bitstream = ''.join(str(bit) for bit in binary_array)
+
+# Show sample
+print("Bitstream preview:", bitstream[:100])
+
+# STEP 2: Packet Extraction
+packet_length = 64  # Try others if needed (like 72 or 80)
+packets = [bitstream[i:i+packet_length] for i in range(0, len(bitstream), packet_length)]
+
+# Filter out incomplete packets
+packets = [p for p in packets if len(p) == packet_length]
+
+print(f"Total packets extracted: {len(packets)}")
+print("First 5 packets:")
+for i in range(min(5, len(packets))):
+    print(f"Packet {i+1}: {packets[i]}")
+
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Convert packets to numpy matrix
+packet_bits = np.array([[int(bit) for bit in pkt] for pkt in packets])
+
+# Compute variability per bit position
+variability = np.std(packet_bits, axis=0)
+
+# Plot rolling code analysis
+plt.figure(figsize=(12, 4))
+plt.plot(variability, marker='o')
+plt.title("Bitwise Variability Across Packets (Rolling Code Detection)")
+plt.xlabel("Bit Index")
+plt.ylabel("Standard Deviation")
+plt.grid(True)
+plt.show()

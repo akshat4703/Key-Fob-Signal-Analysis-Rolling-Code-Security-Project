@@ -1,0 +1,72 @@
+## Compare Original vs Transmitted Signal (Byte-by-Byte)
+
+from pathlib import Path
+print("Comparing original and transmitted signals...")
+# Load files
+original_file = Path("C:\\Users\\aksha\\OneDrive\\Desktop\\keyfob captured\\keyfobclose")
+transmitted_file = Path("C:\\Users\\aksha\\OneDrive\\Desktop\\retransmit through hackrf\\keyfobclose_tx")
+
+# Read first 1024 bytes
+original_data = original_file.read_bytes()[:1024]
+transmitted_data = transmitted_file.read_bytes()[:1024]
+
+# Compare byte-by-byte
+diff_count = sum(1 for o, t in zip(original_data, transmitted_data) if o != t)
+similarity = (1024 - diff_count) / 1024 * 100
+
+print(f"Differences: {diff_count} bytes")
+print(f"Similarity: {similarity:.2f}%")
+
+## Compare Multiple Original Signals (Rolling Code Inference)
+print("\nComparing multiple original signals for rolling code inference...")
+signal1 = Path("C:\\Users\\aksha\\OneDrive\\Desktop\\keyfob captured\\keyfobopencar").read_bytes()[:1024]
+signal2 = Path("C:\\Users\\aksha\\OneDrive\\Desktop\\keyfob captured\\opencar2").read_bytes()[:1024]
+
+# Byte-by-byte comparison
+diff_count = sum(1 for a, b in zip(signal1, signal2) if a != b)
+similarity = (1024 - diff_count) / 1024 * 100
+
+print(f"Differences: {diff_count} bytes")
+print(f"Similarity: {similarity:.2f}%")
+
+## Shannon Entropy Analysis
+print("\nCalculating Shannon entropy for original and transmitted signals...")
+from collections import Counter
+import math
+
+def shannon_entropy(data: bytes) -> float:
+    if not data:
+        return 0.0
+    counter = Counter(data)
+    total = len(data)
+    return -sum((count / total) * math.log2(count / total) for count in counter.values())
+
+# Example usage
+entropy1 = shannon_entropy(signal1)
+entropy2 = shannon_entropy(signal2)
+
+print(f"Entropy of signal 1: {entropy1:.4f}")
+print(f"Entropy of signal 2: {entropy2:.4f}")
+
+## Plot Signal Amplitude (Waveform)
+print("\nPlotting signal amplitude (waveform)...")
+import matplotlib.pyplot as plt
+import numpy as np
+
+# Load signal
+raw = np.fromfile("C:\\Users\\aksha\\OneDrive\\Desktop\\keyfob captured\\keyfobopencar", dtype=np.int8)
+
+# Interpret as IQ samples (I/Q interleaved)
+I = raw[::2]
+Q = raw[1::2]
+amplitude = np.sqrt(I**2 + Q**2)
+
+# Plot a short segment
+plt.figure(figsize=(12, 4))
+plt.plot(amplitude[:1000])
+plt.title("Amplitude of Key Fob Signal")
+plt.xlabel("Sample Index")
+plt.ylabel("Amplitude")
+plt.grid(True)
+plt.show()
+

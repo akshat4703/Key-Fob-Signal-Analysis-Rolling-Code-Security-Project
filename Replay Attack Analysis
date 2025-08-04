@@ -1,0 +1,149 @@
+import numpy as np
+
+# Load original keyfob press
+raw_orig = np.fromfile("C:\\Users\\aksha\\OneDrive\\Desktop\\keyfob captured\\keyfobopencar", dtype=np.int8)
+I_orig = raw_orig[::2]
+Q_orig = raw_orig[1::2]
+iq_orig = I_orig + 1j * Q_orig
+amp_orig = np.abs(iq_orig)
+
+# Load replayed transmission
+raw_tx = np.fromfile("C:\\Users\\aksha\\OneDrive\\Desktop\\retransmit through hackrf\\keyfobopencar_tx", dtype=np.int8)
+I_tx = raw_tx[::2]
+Q_tx = raw_tx[1::2]
+iq_tx = I_tx + 1j * Q_tx
+amp_tx = np.abs(iq_tx)
+
+# Normalize and threshold
+thresh_orig = np.mean(amp_orig)
+thresh_tx = np.mean(amp_tx)
+
+bin_orig = np.where(amp_orig > thresh_orig, 1, 0)
+bin_tx = np.where(amp_tx > thresh_tx, 1, 0)
+
+# Convert to string
+bitstream_orig = ''.join(str(b) for b in bin_orig)
+bitstream_tx = ''.join(str(b) for b in bin_tx)
+
+print("Original Bitstream (first 100):", bitstream_orig[:100])
+print("Replayed Bitstream (first 100):", bitstream_tx[:100])
+
+from difflib import SequenceMatcher
+
+# Trim to same length
+min_len = min(len(bitstream_orig), len(bitstream_tx))
+bitstream_orig = bitstream_orig[:min_len]
+bitstream_tx = bitstream_tx[:min_len]
+
+# Similarity score
+similarity = SequenceMatcher(None, bitstream_orig, bitstream_tx).ratio() * 100
+print(f"Bitstream similarity: {similarity:.2f}%")
+
+import matplotlib.pyplot as plt
+
+plt.figure(figsize=(14, 5))
+plt.subplot(2,1,1)
+plt.plot(amp_orig[:5000])
+plt.title("Original Signal Amplitude")
+plt.grid(True)
+
+plt.subplot(2,1,2)
+plt.plot(amp_tx[:5000])
+plt.title("Replayed Signal Amplitude")
+plt.grid(True)
+
+plt.tight_layout()
+plt.show()
+
+##advanced analysis
+#Auto-Packet Detection and Extraction
+def extract_packets(bitstream, packet_length=64):
+    packets = [bitstream[i:i+packet_length] for i in range(0, len(bitstream), packet_length)]
+    return [p for p in packets if len(p) == packet_length]
+    
+packet_len = 64
+packets_orig = extract_packets(bitstream_orig, packet_len)
+packets_tx   = extract_packets(bitstream_tx, packet_len)
+
+# Show sample
+print(f"Original packets: {len(packets_orig)}")
+print(f"Replayed packets: {len(packets_tx)}")
+print("Original Packet 1:", packets_orig[0])
+print("Replayed Packet 1:", packets_tx[0])
+
+#Bit-by-Bit Packet Comparison
+def compare_packets(p1, p2):
+    return ''.join('✔' if a == b else '✘' for a, b in zip(p1, p2))
+
+comparison = compare_packets(packets_orig[0], packets_tx[0])
+
+print("Comparison:")
+print("Original : ", packets_orig[0])
+print("Replayed : ", packets_tx[0])
+print("Match    : ", comparison)
+
+#Bit Variability Plot (Rolling Code Detection)
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Combine both sets for variability check
+all_packets = packets_orig[:5] + packets_tx[:5]
+bit_matrix = np.array([[int(bit) for bit in pkt] for pkt in all_packets])
+bit_std = np.std(bit_matrix, axis=0)
+
+# Plot
+plt.figure(figsize=(12, 4))
+plt.plot(bit_std, marker='o')
+plt.title("Bit Variability Across Packets (Original + Replayed)")
+plt.xlabel("Bit Index")
+plt.ylabel("Standard Deviation")
+plt.grid(True)
+plt.show()
+
+#Rolling Code Isolation & Visualization
+#Aligning Packets
+from difflib import SequenceMatcher
+
+def best_alignment(packet, packet_list):
+    scores = [SequenceMatcher(None, packet, p).ratio() for p in packet_list]
+    max_idx = np.argmax(scores)
+    return packet_list[max_idx], scores[max_idx]
+
+aligned_tx, score = best_alignment(packets_orig[0], packets_tx)
+print("Best aligned replayed packet:", aligned_tx)
+print("Similarity Score:", f"{score:.2f}")
+
+#Find Consistently Changing Bits
+num_packets = min(len(packets_orig), len(packets_tx), 5)
+bit_changes = []
+
+for i in range(packet_len):
+    changes = sum(packets_orig[j][i] != packets_tx[j][i] for j in range(num_packets))
+    bit_changes.append(changes)
+
+# Plot
+plt.figure(figsize=(12, 4))
+plt.bar(range(packet_len), bit_changes)
+plt.title("Bit Change Count Across Packets (Possible Rolling Code Region)")
+plt.xlabel("Bit Index")
+plt.ylabel("Number of Changes")
+plt.grid(True)
+plt.show()
+
+#Highlight Rolling Code Region (Automatically)
+rolling_bits = [i for i, c in enumerate(bit_changes) if c >= 2]  # changed in at least 2 packets
+print(f"Possible Rolling Code Bits: {rolling_bits}")
+rolling_bits = [i for i, c in enumerate(bit_changes) if c >= 2]  # changed in at least 2 packets
+print(f"Possible Rolling Code Bits: {rolling_bits}")
+
+#Summary Table for Reporting
+import pandas as pd
+
+summary = {
+    "Bit Index": list(range(packet_len)),
+    "Change Count": bit_changes,
+    "Is Rolling Code?": ['Yes' if i in rolling_bits else 'No' for i in range(packet_len)]
+}
+
+df = pd.DataFrame(summary)
+print(df.head(20))  # print first 20 bits
